@@ -1,37 +1,147 @@
-## Welcome to GitHub Pages
+## 前言
+我司的官网首页——[贝聊官网](https://note.youdao.com/)，首屏有一个自动播放的在线视频，一直被诟病视频加载慢，播放卡的问题。刚开始以为是文件太大，或者是网速太慢，但当我去优化它的时候，发现并没有我预想的简单。本篇文章记录了我优化的过程和总结的经验，希望能对读者有所帮助。
+![image](https://note.youdao.com/yws/public/resource/6ae0b6b2cc00bbbdd331b957a8267d95/xmlnote/FFBF953F8DEB46D18F523936315EC422/2857)
 
-You can use the [editor on GitHub](https://github.com/jmx164491960/jmx164491960.github.io/edit/master/README.md) to maintain and preview the content for your website in Markdown files.
+## 现状
+官网的首页由6个屏组成，通过鼠标滚轮上下切换。首屏（第一屏）主要内容是一个自动循环播放的满屏视频，现在体验非常差，具体表现在页面无缓存的时候：
+- 视频画面需要好几秒才能出现，期间只能看到页面的背景色，并且出现第一帧以后，画面会卡着不动，持续很久，有的时候甚至超过10秒，这种情况在下文统一简称**第一帧卡**
+- 画面第一帧卡完了以后**播放不流畅**，体验起来像幻灯片
 
-Whenever you commit to this repository, GitHub Pages will run [Jekyll](https://jekyllrb.com/) to rebuild the pages in your site, from the content in your Markdown files.
+## 初探
 
-### Markdown
+要优化视频的播放卡顿问题，我首先从视频的占用大小入手。
+下载**MediaInfo**查看视频文件：
+- 格式：mp4
+- 分辨率：1080P
+- 码率：4K
+- 大小：7.3M
+- 时长：15秒
 
-Markdown is a lightweight and easy-to-use syntax for styling your writing. It includes conventions for
+4K的码率在对于在线视频是非常高的，我使用视频压缩工具**格式工厂**对其进行调整，把码率压到画质可接受的2400，此时文件大小4.4M。眼见文件大小已经瘦身为原来的60%，想必会有明显的优化效果。
 
-```markdown
-Syntax highlighted code block
+##### 诡异的第一帧
+打包发上测试环境，效果却大跌我的眼镜：视频卡顿感比以前减轻了一点，但还是能明显的感受到不流畅，而视频的第一帧卡的问题更是几乎没有改善。看来通过压缩码率降低文件占用的做法貌似是杯水车薪。
 
-# Header 1
-## Header 2
-### Header 3
+## 深入探索
+在优化在线视频这个领域里，笔者是个小白。意识到简单的减少资源文件大小的方法行不通之后，便上网搜查解决方案，但发现相关文章少之又少，并没有找出第一帧卡的原因。找不到解决方案，就只好自己摸索摸索了，慢慢的脑里有个猜想：如果把视频分成多份，浏览器只要加载了第一份就可以播放，这样会不会减轻视频的第一帧卡的问题呢？
+### 视频分块加载
+我把原有的视频分开了两份，通过监听video标签的ended事件,第一段播完修改src切换视频，第二段播完又切换回第一段，并循环这个过程。
 
-- Bulleted
-- List
+效果不太好，视频第一帧卡的问题得到了一定的改善，但是通过修改src去提高第一帧缓冲速度带来副作用是：切换画面并不是无缝的，每次切换都会卡一秒左右。
 
-1. Numbered
-2. List
+###### 反思
+我想这种方案应该存在更好的做法，比如把修改src的做法改为多个video节点切换显示：创建两个video节点，其中一个video宽高设成1px“隐藏”起来，当第一段视频将要播放结束时第二个video节点的src赋值第二段视频的地址（此时加载第二段视频），并在第一段视频触发结束事件时把宽高设为全屏并执行第二段视频play方法。用此做法来消除切换视频所带来的卡顿感。
 
-**Bold** and _Italic_ and `Code` text
+但上面的做法我没有实践过就选择了放弃。原因一方面视频时长本来才15秒，分块的意义并不大；另一方面我认为这种方案即使做出来能无缝切换，也不会是最好的方案，因为并没有解决根本问题（为什么视频第一帧卡）。
 
-[Link](url) and ![Image](src)
+### moov位置导致第一帧卡？打破传说
+对于为什么第一帧加载慢，我开始怀疑和mp4格式有关，我百度了一下，不少文章提及到moov的问题：
+![image](https://note.youdao.com/yws/public/resource/6ae0b6b2cc00bbbdd331b957a8267d95/xmlnote/CFAE24A145ED40C394BB3C155A232FCD/3945)
+
+mp4虽然支持流传输播放，但视频的“索引”储存在了moov对象，只有moov下载完视频才会开始播放。大多mp4文件会把这个moov放在文件头部，但如果放在了尾部则需要下载完整个文件才能开始播放。参考[https://blog.csdn.net/jinshelj/article/details/72916062](https://blog.csdn.net/jinshelj/article/details/72916062)。
+
+我查看了压缩后的mp4文件，moov的确是在尾部。于是我用ffmpeg，对moov对象做了前置处理。但经过我的测试，发现前置了moov并没有优化第一帧卡的问题，播放表现和在尾部的时候一样。并且当文件moov在尾部的时候，视频在文件下载完之前就开始播了，并无文件下载完才能播一说。
+
+于是我再查阅资料，终于找到了原因：如果服务器本身是支持seek的，那么mp4视频也是能正常边下边播的，参考[https://segmentfault.com/a/1190000012477812](https://segmentfault.com/a/1190000012477812)
+
+既然不是moov导致了第一帧卡，那究竟是什么原因呢？
+### 更适合网络流传输的格式——flv
+
+无意之间，我认识到了一款叫**flv.js**的插件，该插件作用是让原生H5支持flv格式的播放，同时我看到了插件作者的描述，flv相比mp4格式非常简洁，更适合网络流传输。我百度了相关资料：mp4视频的“索引”是整个一起存储的，flv的“索引”则是分段存储的。打个简单的例子：看一个视频的开头，mp4需要下载整个视频的“索引”才能开始播放，flv只需要下载开头部分的“索引”。
+
+为了尝试flv.js能否优化第一帧卡的问题，我引入了flv.js，并把原来的视频转为flv格式。flv.js压缩后只占100KB+，使用起来也非常方便，代码实例如下：
+```
+const flvjs = require('../fiv.js');
+if (flvjs.isSupported()) {
+    var videoElement = $bgVideo[0];
+    var flvPlayer = flvjs.createPlayer({
+        type: 'flv',
+		url: src // 视频的地址
+    });
+	flvPlayer.attachMediaElement(videoElement);
+	flvPlayer.load();
+	flvPlayer.play();
+}
+```
+测试了一下，结果让我惊喜。第一帧卡的问题解决了，但是播放依然是不流畅，体验像幻灯片。虽然问题没有完全解决，而且flv.js不兼容IE10以下的浏览器，但至少获得了进展性的进步，剩下集中精力解决视频播放不流畅的问题。
+
+### 揪出抢占网速的凶手
+
+播放不流畅的问题相对简单，原因要么是下载太慢，要么就是文件太大。而文件已经被压缩，就只需要研究为什么下载慢了。
+
+这个时候我开始把眼光投在页面的静态资源上，看看能否对一些占用大的资源做优化。静态资源在发布生产时已被工具压缩过，已经没有什么再压缩的空间。我的思路是尽量让首屏看见的资源立刻加载，而第一屏外的资源延迟加载。打开浏览器的开发者工具，发现大部分的资源占用都很小，只有一个文件特别大，高达900+KB，打开发现是一个动图，并且不在第一屏内。这个时候就要考虑怎么样才能把图片放在视频下载完之后才加载。基本思路是页面初始化的时候对图片元素隐藏，当视频下载完成再把图片显示。
+
+我查阅了video标签的[原生事件](http://www.w3school.com.cn/tags/html_ref_audio_video_dom.asp)。
+在众多的事件中，事件suspend是比较适用于当前场景的，表现为当视频下载完成触发。
+但suspend兼容性并不好，在IE 9等某些低版本不能触发该事件，而事件progress却没有这个问题。事件progress在当视频下载时会触发，假设一个视频下载耗时10秒，那10秒内每秒都会触发progress。
+
+通过监听事件progress和设置定时器来判断当下视频是否下载完成，达到动图延迟加载的目的。具体代码如下：
+```
+/**
+监听事件progress，触发后设置定时器。每一次progress事件触发便会清空上一次的定时器。
+假如在一秒内progress都没有触发，则视为下载完成，触发callback同时删除绑定。
+**/
+
+// $bgVideo[0]是视频的dom节点
+afterDownload($bgVideo[0], function() {
+	$bgImg.removeClass('hiden');
+});
+
+function afterDownload(video, callback) {
+	// 计时器
+	var callbackTimer = null;
+	// progress事件回调函数。监听progress，直到一秒间不触发progress才执行callback
+	var progressCallBack = function() {
+		clearTimeout(callbackTimer);
+		// 设定1秒的定时器，触发后删除绑定，删除定时器
+		callbackTimer = setTimeout(function() {
+			callback();
+			video.removeEventListener('progress', progressCallBack);
+		}, 1000);
+	};
+	// 绑定事件
+	video.addEventListener('progress', progressCallBack);
+}
 ```
 
-For more details see [GitHub Flavored Markdown](https://guides.github.com/features/mastering-markdown/).
+在调试的过程，上面代码还有点小问题。当视频已经缓存下来的时候，事件progress有时候会不触发，事件suspend也有同样的情况。我猜测可能是视频下载太快，addEventListener还没有执行就已经下载完了。我尝试把事件的绑定写在html上：
+```
+<video onprogress="progressCallBack" .../>
+```
+采用这种做法以后，在本地调试时不断按F5刷新也不会出现问题，但是发布到服务器上却偶尔会出现问题，事件progress又没有被触发。最好我选择一种简单粗暴的方法，在页面初始化时在上一个3秒的定时器：
+```
+function afterDownload(video, callback) {
+	var callbackTimer = null;
+	var progressCallBack = function() { ... };
+	
+	// 防止chrome在缓存的情况下,不触发progress
+	callbackTimer = setTimeout(function() {
+		callback();
+		clearTimeout(callbackTimer);
+		video.removeEventListener('progress', progressCallBack);
+	}, 3000);
+	
+	video.addEventListener('progress', progressCallBack);
+}
+```
+在进入页面后，3秒内不触发progress事件，就视为视频已被缓存，直接执行callback并删除绑定和定时器。问题就此解决了。
 
-### Jekyll Themes
+虽然此做法能解决问题，但是我觉得实现做法不太完美。如果您有更好的方法，请在下面留言☺
 
-Your Pages site will use the layout and styles from the Jekyll theme you have selected in your [repository settings](https://github.com/jmx164491960/jmx164491960.github.io/settings). The name of this theme is saved in the Jekyll `_config.yml` configuration file.
+### 好用又免费的视频压缩工具——小丸工具箱
+经过上述的优化，首页的视频播放效果已经好了很多，但是还是有有偶尔卡顿的情况。之前虽然已经使用格式工厂压缩了一遍视频，但考虑到市面上还有很多其他的视频压缩工具，于是再去百度里多找了一下，发现一款口碑不错的工具，叫“小丸工具箱”。
 
-### Support or Contact
+小丸工具箱相对之前的格式工厂，可以直接去除音频流（需求里视频不需要声音），这样视频体积更小了；操作更傻瓜化了，使用者只需要修改选项里的CRF和分辨率，基本上已经能完成多数情况的压缩需求。关于CRF，引用小丸作者的话介绍一下：
 
-Having trouble with Pages? Check out our [documentation](https://help.github.com/categories/github-pages-basics/) or [contact support](https://github.com/contact) and we’ll help you sort it out.
+> CRF（Const Quality, 固定质量），这种码率控制方式是非常优秀的，以至于可以无需2pass压制，即即使1pass也能实现非常好的码率分配利用。像质量模式的压制方式在其他编码器也有（如xvid或者压制rmvb的ERP），但据我所知都只是“固定量化（Const Quantization）”x264的CRF在量化的基础上，根据人的视觉心理学更为合理地分配码率，其目标是让人在看视频的时候，视频的质量尽可能地统一，但码率达到尽可能的有效利用。
+> CRF模式还有个优势，很多人在压片的时候不清楚应该给视频压到多少码率才比较好。CRF就是按需要来分配码率的，故其实就省下了到底要多少码率的苦恼。
+
+这里附上小丸工具箱的[入门操作教程](http://42.96.168.211:8088/topics/41)。
+
+最后使用小丸工具箱尝试不同了的CRF值，压制之后再肉眼对比，在画质和文件体积间找出一个平衡，把视频在1080P分辨率下压到了3.4M。而我后面再尝试减少分辨率，发现当分辨率降为720P。画质相差得并不明显，尚能接受。最终选择了分辨率720p，CRF23的压缩参数，此时视频压制到了2M，相较一开始的7.3M简直是暴瘦。
+
+### 总结
+至此，视频比较能够快速呈现，流畅播放。同时我也发现，视频无论是使用mp4格式，还是flv格式，第一帧卡的问题都已经不存在了。对于此问题，我用chrome的限速功能测试过，只有在网速不够用的情况下（要么网速太慢，要么视频文件太大），mp4格式视频才会出现第一帧卡的问题。由于我们已经把视频的大小压到了足够小，并且对大图做了延迟加载的处理，所以此时flv和mp4两格式的差距就微不足道了。最终我把flv.js撤了下来，统一使用mp4文件播放。
+
+### 尾声
+本篇文章记录了我对于首屏的整个优化过程和当中得到的一些经验，过程磕磕碰碰，希望能帮助读者少走些弯路。同时我认为优化这个事是永无止境的，特别是我对于视频压缩方便的知识较为薄弱，如果文中有什么不对的地方，或者好的建议，请读者们不吝赐教。
