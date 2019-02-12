@@ -3,6 +3,10 @@
 
 [Vue单元测试探索](https://juejin.im/post/5b308f5e6fb9a00e5d798c3c)
 
+[实现一个Promise](https://github.com/jmx164491960/Blog/issues/3)
+
+
+
 ## 联系方式
 邮箱： jmx164491960@126.com
 
