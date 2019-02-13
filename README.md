@@ -5,7 +5,7 @@
 
 [实现一个Promise](https://github.com/jmx164491960/Blog/issues/3)
 
-[前端知识思维导图](https://github.com/jmx164491960/Blog/issues/4)
+[前端知识思维导图](https://github.com/jmx164491960/FE-xmind)
 
 
 
