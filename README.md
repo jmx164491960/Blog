@@ -7,7 +7,7 @@
 
 [前端知识思维导图](https://github.com/jmx164491960/FE-xmind)
 
-
+[原型链与继承浅谈](https://github.com/jmx164491960/Blog/issues/5)
 
 
 ## 在线作品
