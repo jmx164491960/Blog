@@ -1,5 +1,7 @@
 ## 文章
 
+[搭建一个按需加载的Vue组件库（类似element）](https://github.com/jmx164491960/Blog/issues/7)
+
 [Vue中对iframe实现keep alive（无刷新）](https://github.com/jmx164491960/Blog/issues/6)
 
 [首屏视频的优化过程](https://juejin.im/post/5b68288df265da0fa21aa6bf)
