@@ -1,4 +1,5 @@
 ## 文章
+[几分钟加速你的国际化](https://github.com/jmx164491960/Blog/issues/8)
 
 [搭建一个按需加载的Vue组件库（类似element）](https://github.com/jmx164491960/Blog/issues/7)
 
