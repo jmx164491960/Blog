@@ -1,4 +1,6 @@
 ## 文章
+[“Vue渐进式重构”规范](https://github.com/jmx164491960/Blog/issues/10)
+
 [JQ到Vue渐进式重构](https://github.com/jmx164491960/Blog/issues/9)
 
 [几分钟加速你的国际化](https://github.com/jmx164491960/Blog/issues/8)
